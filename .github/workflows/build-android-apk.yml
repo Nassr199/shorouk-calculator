@@ -1,92 +1,54 @@
 
-name: Build Shorouk APK
+name: Build Shorouk Calculator APK
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Build Shorouk Android APK
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    name: Test and build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
-      - name: Verify uploaded ZIP
-        run: |
-          test -f shorouk-calculator-v3-android-ready.zip
-          unzip -tq shorouk-calculator-v3-android-ready.zip
-          unzip -Z1 shorouk-calculator-v3-android-ready.zip | grep -qx 'shorouk-src/package.json'
-
-      - name: Extract project
-        run: unzip -q shorouk-calculator-v3-android-ready.zip -d .
-
-      - name: Verify extracted project
-        run: |
-          test -f shorouk-src/package.json
-          test -f shorouk-src/capacitor.config.ts
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          package-manager-cache: false
-
-      - name: Setup Java
-        uses: actions/setup-java@v6
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: platform-tools
-          accept-android-sdk-licenses: true
-          log-accepted-android-sdk-licenses: false
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
-      - name: Install Android SDK packages
-        run: |
-          sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-      - name: Install project dependencies
-        working-directory: shorouk-src
-        run: npm install --no-audit --no-fund
+      - name: Make Gradle wrapper executable
+        working-directory: _android_zip/shorouk-android
+        run: chmod +x ./gradlew
 
-      - name: Build web application
-        working-directory: shorouk-src
-        run: npm run build
+      - name: Run unit tests
+        working-directory: _android_zip/shorouk-android
+        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
 
-      - name: Create Android project
-        working-directory: shorouk-src
-        run: |
-          npx cap add android
-          npx capacitor-assets generate --android --iconBackgroundColor '#134448' --iconBackgroundColorDark '#030C0E' --splashBackgroundColor '#C9DBDA' --splashBackgroundColorDark '#030C0E'
-          npx cap sync android
+      - name: Build release APK
+        working-directory: _android_zip/shorouk-android
+        run: ./gradlew --no-daemon --stacktrace assembleRelease
 
-      - name: Compile APK
-        working-directory: shorouk-src/android
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-
-      - name: Verify APK
-        run: |
-          test -f shorouk-src/android/app/build/outputs/apk/debug/app-debug.apk
-          ls -lh shorouk-src/android/app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v7
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
         with:
-          name: Shorouk-Calculator-APK
-          path: shorouk-src/android/app/build/outputs/apk/debug/app-debug.apk
+          name: shorouk-calculator-release-apk
+          path: _android_zip/shorouk-android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
